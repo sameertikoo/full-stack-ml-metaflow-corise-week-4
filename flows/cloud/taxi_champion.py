@@ -1,40 +1,37 @@
-from metaflow import FlowSpec, step, card, conda_base, current, Parameter, Flow, trigger, project, S3
+from metaflow import FlowSpec, step, card, conda_base, current, Parameter, Flow, trigger
+from metaflow import project, S3
 from metaflow.cards import Markdown, Table, Image, Artifact
 
 # URL = "https://outerbounds-datasets.s3.us-west-2.amazonaws.com/taxi/latest.parquet"
 URL = 's3://outerbounds-datasets/taxi/latest.parquet'
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
-# @trigger(events=['s3'])
-@conda_base(libraries={'pandas': '1.4.2', 'pyarrow': '11.0.0', 'numpy': '1.21.2', 'scikit-learn': '1.1.2', 'py-xgboost': '1.7.4'})
-@project(name="taxi_model")
-class TaxiPriceModel(FlowSpec):
+@trigger(events=['s3'])
+@conda_base(libraries={'pandas': '1.4.2', 'pyarrow': '11.0.0', 'numpy': '1.21.2', 'scikit-learn': '1.1.2'})
+@project(name='taxifare_prediction')
+class TaxiFarePrediction(FlowSpec):
 
     data_url = Parameter("data_url", default=URL)
 
     def transform_features(self, df):
+        # TODODONE: 
+        # Try to complete tasks 2 and 3 with this function doing nothing like it currently is.
+        # Understand what is happening.
+        # Revisit task 1 and think about what might go in this function.
 
-        # TODO: 
-            # Try to complete tasks 2 and 3 with this function doing nothing like it currently is.
-            # Understand what is happening.
-            # Revisit task 1 and think about what might go in this function.
+        obviously_bad_data_filters = {
+            'fare_amount': df.fare_amount > 0,         # fare_amount in US Dollars
+            'trip_distance_max': df.trip_distance <= 100,    # trip_distance in miles
+            'trip_distance_min': df.trip_distance > 0,
+            'tip_amount': df.tip_amount >= 0,
+            'total_amount': df.total_amount > 0,
+            'tolls_amount': df.tolls_amount >= 0,
+        }
 
-        obviously_bad_data_filters = [
+        for key, f in obviously_bad_data_filters.items():
+            df = df[f]
+            # print(f'Removed {key}, size: {len(df)}')
 
-            df.fare_amount > 0,         # fare_amount in US Dollars
-            df.trip_distance <= 100,    # trip_distance in miles
-            df.trip_distance > 0,
-            df.extra >= 0,
-            df.mta_tax >= 0,
-            df.tip_amount >= 0,
-            df.total_amount > 0,
-            df.airport_fee >= 0,
-
-        ]
-
-        for obviously_bad_data_filter in obviously_bad_data_filters:
-            df = df[obviously_bad_data_filter]
-        df = df.dropna()
         return df
 
     @step
@@ -42,15 +39,15 @@ class TaxiPriceModel(FlowSpec):
 
         import pandas as pd
         from sklearn.model_selection import train_test_split
+
         with S3() as s3:
             obj = s3.get(URL)
             df = pd.read_parquet(obj.path)
 
         self.df = self.transform_features(df)
-        
         # self.df = self.transform_features(pd.read_parquet(self.data_url))
 
-        # NOTE: we are split into training and validation set in the validation step which uses cross_val_score.
+        # NOTEOK: we are split into training and validation set in the validation step which uses cross_val_score.
         # This is a simple/naive way to do this, and is meant to keep this example simple, to focus learning on deploying Metaflow flows.
         # In practice, you want split time series data in more sophisticated ways and run backtests. 
         self.X = self.df["trip_distance"].values.reshape(-1, 1)
@@ -61,8 +58,9 @@ class TaxiPriceModel(FlowSpec):
     def linear_model(self):
         "Fit a single variable, linear model to the data."
         from sklearn.linear_model import LinearRegression
-        self.model = LinearRegression()
 
+        # TODODONE: Play around with the model if you are feeling it.
+        self.model = LinearRegression()
         self.next(self.validate)
 
     def gather_sibling_flow_run_results(self):
@@ -103,8 +101,10 @@ class TaxiPriceModel(FlowSpec):
 
     @step
     def end(self):
+        self.model_name = 'champion'
+        print(f'Score: {self.scores.mean():.4f}')
         print("Success!")
 
 
 if __name__ == "__main__":
-    TaxiPriceModel()
+    TaxiFarePrediction()

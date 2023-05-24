@@ -1,38 +1,39 @@
-from metaflow import FlowSpec, step, card, conda_base, current, Parameter, Flow, trigger, project, S3, retry
+from metaflow import FlowSpec, step, card, conda_base, current, Parameter, Flow, trigger
+from metaflow import project, S3
 from metaflow.cards import Markdown, Table, Image, Artifact
 
 # URL = "https://outerbounds-datasets.s3.us-west-2.amazonaws.com/taxi/latest.parquet"
 URL = 's3://outerbounds-datasets/taxi/latest.parquet'
 DATETIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
-# @trigger(events=['s3'])
-@conda_base(libraries={'pandas': '1.4.2', 'pyarrow': '11.0.0', 'numpy': '1.21.2', 'scikit-learn': '1.1.2', 'py-xgboost': '1.7.4'})
-@project(name="taxi_model")
-class TaxiPriceModel(FlowSpec):
+@trigger(events=['s3'])
+@conda_base(libraries={'pandas': '1.4.2', 'pyarrow': '11.0.0', 'numpy': '1.21.2', 'scikit-learn': '1.1.2', 'xgboost' : '1.7.4'})
+@project(name='taxifare_prediction')
+class TaxiFarePrediction(FlowSpec):
 
     data_url = Parameter("data_url", default=URL)
 
     def transform_features(self, df):
+        # TODODONE: 
+        # Try to complete tasks 2 and 3 with this function doing nothing like it currently is.
+        # Understand what is happening.
+        # Revisit task 1 and think about what might go in this function.
 
-        obviously_bad_data_filters = [
+        obviously_bad_data_filters = {
+            'fare_amount': df.fare_amount > 0,         # fare_amount in US Dollars
+            'trip_distance_max': df.trip_distance <= 100,    # trip_distance in miles
+            'trip_distance_min': df.trip_distance > 0,
+            'tip_amount': df.tip_amount >= 0,
+            'total_amount': df.total_amount > 0,
+            'tolls_amount': df.tolls_amount >= 0,
+        }
 
-            df.fare_amount > 0,         # fare_amount in US Dollars
-            df.trip_distance <= 100,    # trip_distance in miles
-            df.trip_distance > 0,
-            df.extra >= 0,
-            df.mta_tax >= 0,
-            df.tip_amount >= 0,
-            df.total_amount > 0,
-            df.airport_fee >= 0,
-
-        ]
-
-        for f in obviously_bad_data_filters:
+        for key, f in obviously_bad_data_filters.items():
             df = df[f]
-        df = df.dropna()
+            # print(f'Removed {key}, size: {len(df)}')
+
         return df
 
-    @retry(times=2)  # maybe a read error
     @step
     def start(self):
 
@@ -44,13 +45,18 @@ class TaxiPriceModel(FlowSpec):
             df = pd.read_parquet(obj.path)
 
         self.df = self.transform_features(df)
+        # self.df = self.transform_features(pd.read_parquet(self.data_url))
+
+        # NOTEOK: we are split into training and validation set in the validation step which uses cross_val_score.
+        # This is a simple/naive way to do this, and is meant to keep this example simple, to focus learning on deploying Metaflow flows.
+        # In practice, you want split time series data in more sophisticated ways and run backtests. 
         self.X = self.df["trip_distance"].values.reshape(-1, 1)
         self.y = self.df["total_amount"].values
-        self.next(self.xgb_model)
-
+        self.next(self.xgboost_model)
+    
     @step
-    def xgb_model(self):
-        "XGB model"
+    def xgboost_model(self):
+        "Fit an XGBoost model"
         from xgboost import XGBRegressor
         self.model = XGBRegressor()
         self.next(self.validate)
@@ -86,15 +92,19 @@ class TaxiPriceModel(FlowSpec):
     @step
     def validate(self):
         from sklearn.model_selection import cross_val_score
+
         self.scores = cross_val_score(self.model, self.X, self.y, cv=5)
+        
         current.card.append(Markdown("# Taxi Fare Prediction Results"))
         current.card.append(Table(self.gather_sibling_flow_run_results(), headers=["Pass/fail", "Run ID", "Created At", "R^2 score", "Stderr"]))
         self.next(self.end)
 
     @step
     def end(self):
+        self.model_name = 'challenger'
+        print(f'{self.model_name} score: {self.scores.mean():.4f}')
         print("Success!")
 
 
 if __name__ == "__main__":
-    TaxiPriceModel()
+    TaxiFarePrediction()
