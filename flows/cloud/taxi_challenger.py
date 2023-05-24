@@ -48,15 +48,14 @@ class TaxiFarePrediction(FlowSpec):
         # self.df = self.transform_features(pd.read_parquet(self.data_url))
 
         # NOTEOK: we are split into training and validation set in the validation step which uses cross_val_score.
-        # This is a simple/naive way to do this, and is meant to keep this example simple, to focus learning on deploying Metaflow flows.
-        # In practice, you want split time series data in more sophisticated ways and run backtests. 
+      
         self.X = self.df["trip_distance"].values.reshape(-1, 1)
         self.y = self.df["total_amount"].values
         self.next(self.xgboost_model)
     
     @step
     def xgboost_model(self):
-        "Fit an XGBoost model"
+        "Fit an XGBoost regression"
         from xgboost import XGBRegressor
         self.model = XGBRegressor()
         self.next(self.validate)

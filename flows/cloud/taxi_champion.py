@@ -14,10 +14,7 @@ class TaxiFarePrediction(FlowSpec):
     data_url = Parameter("data_url", default=URL)
 
     def transform_features(self, df):
-        # TODODONE: 
-        # Try to complete tasks 2 and 3 with this function doing nothing like it currently is.
-        # Understand what is happening.
-        # Revisit task 1 and think about what might go in this function.
+       
 
         obviously_bad_data_filters = {
             'fare_amount': df.fare_amount > 0,         # fare_amount in US Dollars
@@ -48,8 +45,7 @@ class TaxiFarePrediction(FlowSpec):
         # self.df = self.transform_features(pd.read_parquet(self.data_url))
 
         # NOTEOK: we are split into training and validation set in the validation step which uses cross_val_score.
-        # This is a simple/naive way to do this, and is meant to keep this example simple, to focus learning on deploying Metaflow flows.
-        # In practice, you want split time series data in more sophisticated ways and run backtests. 
+        
         self.X = self.df["trip_distance"].values.reshape(-1, 1)
         self.y = self.df["total_amount"].values
         self.next(self.linear_model)
